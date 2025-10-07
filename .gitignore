@@ -1,0 +1,92 @@
+# =========================
+# Node & npm
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# =========================
+# Build Outputs
+# =========================
+dist/
+build/
+out/
+.next/
+coverage/
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+*.log.*
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# =========================
+# OS-generated Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE / Editor Folders
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Uploads / User Files
+# =========================
+uploads/*
+!uploads/.gitkeep
+
+# =========================
+# Test / Temp / Cache
+# =========================
+coverage/
+.cache/
+.tmp/
+.eslintcache
+
+# =========================
+# TypeScript (if used)
+# =========================
+*.tsbuildinfo
+
+# =========================
+# Docker
+# =========================
+*.tar
+*.pid
+docker-compose.override.yml
+.env.docker
+
+# =========================
+# Misc
+# =========================
+*.bak
+*.orig
+*.rej
+
+# =========================
+# Supabase / Firebase / Keys
+# =========================
+supabase/.temp/
+firebase-debug.log
+serviceAccountKey.json
