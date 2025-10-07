@@ -1,82 +1,146 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Edit, Plus, TrendingDown, TrendingUp } from "lucide-react";
+import { Trash2, Edit, Plus, TrendingDown, TrendingUp, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { categoryApi } from "@/services/transactService";
 
 interface Category {
   id: string;
   name: string;
   type: "income" | "expense";
   color: string;
-  transactionCount: number;
+  icon?: string;
+  is_default: boolean;
+  transaction_count?: number;
 }
 
 export default function Categories() {
   const { toast } = useToast();
-  const [categories, setCategories] = useState<Category[]>([
-    { id: "1", name: "Salary", type: "income", color: "#10b981", transactionCount: 12 },
-    { id: "2", name: "Groceries", type: "expense", color: "#ef4444", transactionCount: 45 },
-    { id: "3", name: "Transport", type: "expense", color: "#f59e0b", transactionCount: 23 },
-    { id: "4", name: "Entertainment", type: "expense", color: "#8b5cf6", transactionCount: 18 },
-    { id: "5", name: "Freelance", type: "income", color: "#06b6d4", transactionCount: 8 },
-  ]);
-
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     type: "expense" as "income" | "expense",
     color: "#8b5cf6",
+    icon: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch categories with counts
+  const fetchCategories = async () => {
+    try {
+      setLoading(true);
+      const response = await categoryApi.getWithCounts();
+      setCategories(response.data.data);
+    } catch (error: any) {
+      toast({
+        title: "Error fetching categories",
+        description: error.response?.data?.error?.message || "Something went wrong",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingCategory) {
-      setCategories(categories.map(cat => 
-        cat.id === editingCategory.id 
-          ? { ...cat, ...formData }
-          : cat
-      ));
-      toast({ title: "Category updated successfully" });
-    } else {
-      const newCategory: Category = {
-        id: Date.now().toString(),
-        ...formData,
-        transactionCount: 0,
-      };
-      setCategories([...categories, newCategory]);
-      toast({ title: "Category created successfully" });
-    }
+    try {
+      if (editingCategory) {
+        if (editingCategory.is_default) {
+          toast({
+            title: "Cannot edit default category",
+            description: "Default categories cannot be modified",
+            variant: "destructive",
+          });
+          return;
+        }
+        await categoryApi.update(editingCategory.id, formData);
+        toast({ title: "Category updated successfully" });
+      } else {
+        await categoryApi.create(formData);
+        toast({ title: "Category created successfully" });
+      }
 
-    setIsDialogOpen(false);
-    setEditingCategory(null);
-    setFormData({ name: "", type: "expense", color: "#8b5cf6" });
+      setIsDialogOpen(false);
+      setEditingCategory(null);
+      setFormData({ name: "", type: "expense", color: "#8b5cf6", icon: "" });
+      fetchCategories();
+    } catch (error: any) {
+      toast({
+        title: "Error saving category",
+        description: error.response?.data?.error?.message || "Something went wrong",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleEdit = (category: Category) => {
+    if (category.is_default) {
+      toast({
+        title: "Cannot edit default category",
+        description: "Default categories cannot be modified",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setEditingCategory(category);
     setFormData({
       name: category.name,
       type: category.type,
       color: category.color,
+      icon: category.icon || "",
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id: string) => {
-    setCategories(categories.filter(cat => cat.id !== id));
-    toast({ title: "Category deleted", variant: "destructive" });
+  const handleDelete = async (id: string, isDefault: boolean) => {
+    if (isDefault) {
+      toast({
+        title: "Cannot delete default category",
+        description: "Default categories cannot be deleted",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!confirm("Are you sure you want to delete this category?")) return;
+
+    try {
+      await categoryApi.delete(id);
+      toast({ title: "Category deleted successfully" });
+      fetchCategories();
+    } catch (error: any) {
+      toast({
+        title: "Error deleting category",
+        description: error.response?.data?.error?.message || "Something went wrong",
+        variant: "destructive",
+      });
+    }
   };
 
   const incomeCategories = categories.filter(cat => cat.type === "income");
   const expenseCategories = categories.filter(cat => cat.type === "expense");
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -90,7 +154,7 @@ export default function Categories() {
           <DialogTrigger asChild>
             <Button className="shadow-glow" onClick={() => {
               setEditingCategory(null);
-              setFormData({ name: "", type: "expense", color: "#8b5cf6" });
+              setFormData({ name: "", type: "expense", color: "#8b5cf6", icon: "" });
             }}>
               <Plus className="w-4 h-4 mr-2" />
               New Category
@@ -121,6 +185,7 @@ export default function Categories() {
                   onValueChange={(value: "income" | "expense") => 
                     setFormData({ ...formData, type: value })
                   }
+                  disabled={!!editingCategory}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -148,6 +213,18 @@ export default function Categories() {
                   />
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="icon">Icon (Optional)</Label>
+                <Input
+                  id="icon"
+                  value={formData.icon}
+                  onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                  placeholder="e.g., shopping-cart"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lucide icon name (optional)
+                </p>
+              </div>
               <Button type="submit" className="w-full">
                 {editingCategory ? "Update" : "Create"} Category
               </Button>
@@ -166,43 +243,56 @@ export default function Categories() {
             <CardDescription>{incomeCategories.length} categories</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {incomeCategories.map((category) => (
-                <div
-                  key={category.id}
-                  className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: category.color }}
-                    />
-                    <div>
-                      <p className="font-medium">{category.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {category.transactionCount} transactions
-                      </p>
+            {incomeCategories.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                No income categories yet
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {incomeCategories.map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <div>
+                        <p className="font-medium flex items-center gap-2">
+                          {category.name}
+                          {category.is_default && (
+                            <span className="text-xs text-muted-foreground">(Default)</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {category.transaction_count || 0} transactions
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(category)}
+                        disabled={category.is_default}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(category.id, category.is_default)}
+                        disabled={category.is_default}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(category)}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(category.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -215,43 +305,56 @@ export default function Categories() {
             <CardDescription>{expenseCategories.length} categories</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {expenseCategories.map((category) => (
-                <div
-                  key={category.id}
-                  className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: category.color }}
-                    />
-                    <div>
-                      <p className="font-medium">{category.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {category.transactionCount} transactions
-                      </p>
+            {expenseCategories.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                No expense categories yet
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {expenseCategories.map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center justify-between p-4 rounded-lg border border-border hover:bg-accent/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <div>
+                        <p className="font-medium flex items-center gap-2">
+                          {category.name}
+                          {category.is_default && (
+                            <span className="text-xs text-muted-foreground">(Default)</span>
+                          )}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {category.transaction_count || 0} transactions
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(category)}
+                        disabled={category.is_default}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(category.id, category.is_default)}
+                        disabled={category.is_default}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleEdit(category)}
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(category.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -10,6 +11,7 @@ import {
   Target,
   FolderOpen,
   Repeat,
+  Loader2,
 } from "lucide-react";
 import {
   AreaChart,
@@ -23,56 +25,134 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { useToast } from "@/hooks/use-toast";
+import { analyticsApi, transactionApi } from "@/services/transactService";
 
-const statsData = [
-  {
-    title: "Total Balance",
-    value: "$12,543.90",
-    change: "+12.5%",
-    positive: true,
-    icon: Wallet,
-  },
-  {
-    title: "Income",
-    value: "$5,240.00",
-    change: "+8.2%",
-    positive: true,
-    icon: TrendingUp,
-  },
-  {
-    title: "Expenses",
-    value: "$3,124.50",
-    change: "-3.1%",
-    positive: true,
-    icon: CreditCard,
-  },
-  {
-    title: "Savings",
-    value: "$2,118.40",
-    change: "+15.3%",
-    positive: true,
-    icon: Target,
-  },
-];
+interface DashboardMetrics {
+  total_income: number;
+  total_expenses: number;
+  net_savings: number;
+  savings_rate: number;
+  transaction_count: number;
+  expense_change_percent: number;
+  top_category?: {
+    name: string;
+    total: number;
+    color: string;
+  };
+}
 
-const chartData = [
-  { month: "Jan", income: 4000, expenses: 2400 },
-  { month: "Feb", income: 3000, expenses: 1398 },
-  { month: "Mar", income: 2000, expenses: 3800 },
-  { month: "Apr", income: 2780, expenses: 3908 },
-  { month: "May", income: 1890, expenses: 4800 },
-  { month: "Jun", income: 5240, expenses: 3124 },
-];
+interface ExpenseByCategory {
+  category: string;
+  amount: number;
+  color: string;
+  percentage: number;
+}
 
-const categoryData = [
-  { name: "Food", value: 850, color: "hsl(263, 70%, 60%)" },
-  { name: "Transport", value: 420, color: "hsl(142, 76%, 45%)" },
-  { name: "Entertainment", value: 320, color: "hsl(200, 70%, 60%)" },
-  { name: "Shopping", value: 680, color: "hsl(280, 70%, 60%)" },
-  { name: "Bills", value: 854, color: "hsl(0, 72%, 51%)" },
-];
+interface ExpenseOverTime {
+  month: string;
+  income: number;
+  expenses: number;
+}
+
+interface RecentTransaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  category: {
+    name: string;
+    color: string;
+  };
+  date: string;
+}
 
 export default function Dashboard() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [expensesByCategory, setExpensesByCategory] = useState<ExpenseByCategory[]>([]);
+  const [expensesOverTime, setExpensesOverTime] = useState<ExpenseOverTime[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
+
+  // Fetch all dashboard data
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+
+      // Fetch metrics
+      const metricsRes = await analyticsApi.getDashboard(month, year);
+      setMetrics(metricsRes.data.data);
+
+      // Fetch expenses by category
+      const categoryRes = await analyticsApi.getExpensesByCategory(month, year);
+      setExpensesByCategory(categoryRes.data.data.data || []);
+
+      // Fetch expenses over time (last 6 months)
+      const timeRes = await analyticsApi.getExpensesOverTime(6);
+      setExpensesOverTime(timeRes.data.data || []);
+
+      // Fetch recent transactions
+      const transactionsRes = await transactionApi.getRecent(5);
+      setRecentTransactions(transactionsRes.data.data || []);
+
+    } catch (error: any) {
+      toast({
+        title: "Error loading dashboard",
+        description: error.response?.data?.error?.message || "Failed to load data",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const statsData = [
+    {
+      title: "Total Balance",
+      value: `$${metrics?.net_savings.toFixed(2) || '0.00'}`,
+      change: `${metrics?.savings_rate.toFixed(1) || 0}%`,
+      positive: (metrics?.net_savings || 0) >= 0,
+      icon: Wallet,
+    },
+    {
+      title: "Income",
+      value: `$${metrics?.total_income.toFixed(2) || '0.00'}`,
+      change: "+0.0%",
+      positive: true,
+      icon: TrendingUp,
+    },
+    {
+      title: "Expenses",
+      value: `$${metrics?.total_expenses.toFixed(2) || '0.00'}`,
+      change: `${metrics?.expense_change_percent.toFixed(1) || 0}%`,
+      positive: (metrics?.expense_change_percent || 0) < 0,
+      icon: CreditCard,
+    },
+    {
+      title: "Savings Rate",
+      value: `${metrics?.savings_rate.toFixed(1) || 0}%`,
+      change: `${metrics?.transaction_count || 0} transactions`,
+      positive: true,
+      icon: Target,
+    },
+  ];
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
@@ -159,44 +239,50 @@ export default function Dashboard() {
             <CardTitle>Income vs Expenses</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(142, 76%, 45%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(142, 76%, 45%)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
-                <YAxis stroke="hsl(var(--muted-foreground))" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "var(--radius)",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="income"
-                  stroke="hsl(142, 76%, 45%)"
-                  fillOpacity={1}
-                  fill="url(#colorIncome)"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="expenses"
-                  stroke="hsl(0, 72%, 51%)"
-                  fillOpacity={1}
-                  fill="url(#colorExpenses)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {expensesOverTime.length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                <p>No data available yet</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={expensesOverTime}>
+                  <defs>
+                    <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(142, 76%, 45%)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(142, 76%, 45%)" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" />
+                  <YAxis stroke="hsl(var(--muted-foreground))" />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "var(--radius)",
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="income"
+                    stroke="hsl(142, 76%, 45%)"
+                    fillOpacity={1}
+                    fill="url(#colorIncome)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="expenses"
+                    stroke="hsl(0, 72%, 51%)"
+                    fillOpacity={1}
+                    fill="url(#colorExpenses)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
 
@@ -206,95 +292,118 @@ export default function Dashboard() {
             <CardTitle>Expenses by Category</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "var(--radius)",
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-4 space-y-2">
-              {categoryData.map((category) => (
-                <div key={category.name} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: category.color }}
+            {expensesByCategory.length === 0 ? (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                <p>No expenses yet</p>
+              </div>
+            ) : (
+              <>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={expensesByCategory}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={5}
+                      dataKey="amount"
+                      nameKey="category"
+                    >
+                      {expensesByCategory.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--card))",
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: "var(--radius)",
+                      }}
                     />
-                    <span>{category.name}</span>
-                  </div>
-                  <span className="font-medium">${category.value}</span>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="mt-4 space-y-2">
+                  {expensesByCategory.slice(0, 5).map((category) => (
+                    <div key={category.category} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: category.color }}
+                        />
+                        <span>{category.category}</span>
+                      </div>
+                      <span className="font-medium">${category.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
 
       {/* Recent Transactions */}
       <Card className="glass-card shadow-card">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Recent Transactions</CardTitle>
+          <Link to="/transactions">
+            <Button variant="outline" size="sm">View All</Button>
+          </Link>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {[
-              { name: "Grocery Store", amount: -85.32, category: "Food", date: "Today" },
-              { name: "Salary Deposit", amount: 5240.0, category: "Income", date: "Yesterday" },
-              { name: "Netflix", amount: -15.99, category: "Entertainment", date: "2 days ago" },
-              { name: "Uber", amount: -24.5, category: "Transport", date: "3 days ago" },
-            ].map((transaction, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between p-4 rounded-lg bg-background/50 hover:bg-background/80 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      transaction.amount > 0 ? "bg-success/20" : "bg-destructive/20"
-                    }`}
-                  >
-                    {transaction.amount > 0 ? (
-                      <ArrowUpRight className="w-5 h-5 text-success" />
-                    ) : (
-                      <ArrowDownRight className="w-5 h-5 text-destructive" />
-                    )}
+          {recentTransactions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No transactions yet</p>
+              <Link to="/transactions">
+                <Button className="mt-4" variant="outline">
+                  Add your first transaction
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {recentTransactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="flex items-center justify-between p-4 rounded-lg bg-background/50 hover:bg-background/80 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                        transaction.type === "income" ? "bg-success/20" : "bg-destructive/20"
+                      }`}
+                    >
+                      {transaction.type === "income" ? (
+                        <ArrowUpRight className="w-5 h-5 text-success" />
+                      ) : (
+                        <ArrowDownRight className="w-5 h-5 text-destructive" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="font-medium">{transaction.description}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {transaction.category.name}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="font-medium">{transaction.name}</div>
-                    <div className="text-sm text-muted-foreground">{transaction.category}</div>
+                  <div className="text-right">
+                    <div
+                      className={`font-semibold ${
+                        transaction.type === "income" ? "text-success" : "text-foreground"
+                      }`}
+                    >
+                      {transaction.type === "income" ? "+" : "-"}$
+                      {Math.abs(transaction.amount).toFixed(2)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {new Date(transaction.date).toLocaleDateString()}
+                    </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div
-                    className={`font-semibold ${
-                      transaction.amount > 0 ? "text-success" : "text-foreground"
-                    }`}
-                  >
-                    {transaction.amount > 0 ? "+" : ""}${Math.abs(transaction.amount).toFixed(2)}
-                  </div>
-                  <div className="text-sm text-muted-foreground">{transaction.date}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

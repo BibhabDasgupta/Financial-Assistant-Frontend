@@ -90,3 +90,8 @@ docker-compose.override.yml
 supabase/.temp/
 firebase-debug.log
 serviceAccountKey.json
+
+
+*.txt
+
+*.py
